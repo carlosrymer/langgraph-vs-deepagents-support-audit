@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LangGraph vs Deep Agents</title>
+<meta name="description" content="Same model, same tools, three scaffolds: does LangChain Deep Agents' context offloading beat a plain LangGraph loop when tool outputs get large?">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <p class="kicker">Harness experiment · deepagents 0.7.19 vs langgraph 1.2.12 · gpt-5.4-mini</p>
+  <h1>LangGraph vs Deep Agents: what happens when the tool output gets big</h1>
+  <p class="lede" id="lede">I gave the same model the same tools and prompt, and swapped only the scaffold. When the tool outputs got big, default Deep Agents answered <strong data-h="da_xl"></strong> correctly. A plain LangGraph loop answered <strong data-h="lg_xl"></strong>, and so did Deep Agents with offloading switched off (<strong data-h="nooff_xl"></strong>). The whole gap comes from one middleware setting.</p>
+  <p>The caveat: the wall the other two arms hit was my OpenAI account's 200k-token per-request limit, not the model's 400k context window. Below that wall, accuracy differences are within noise, and Deep Agents' advantage is cost: <span data-h="da_l_cost_run"></span> vs <span data-h="lg_l_cost_run"></span> per run at the L size. Offloading also brings its own failure mode: when it searched the offloaded file with <code>grep</code> it passed <span data-h="grep_passes"></span>, and when it read only a window of the file it passed <span data-h="window_passes"></span>.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Deep Agents accuracy at XL</div><div class="value" data-h="da_xl">…</div><div class="sub">defaults, ~78k-token exports</div></div>
+    <div class="tile"><div class="label">Plain LangGraph accuracy at XL</div><div class="value" data-h="lg_xl">…</div><div class="sub">same model, tools and prompt</div></div>
+    <div class="tile"><div class="label">Deep Agents, offload off, at XL</div><div class="value" data-h="nooff_xl">…</div><div class="sub">the ablation arm</div></div>
+    <div class="tile"><div class="label">Metered spend, scored runs</div><div class="value" data-h="total_cost">…</div><div class="sub"><span data-h="total_runs"></span> runs, <span data-t="model_calls"></span> model calls</div></div>
+  </div>
+
+  <h2>Accuracy as the exports grow</h2>
+  <p>Every ticket's transcript gets longer as the size dial goes up, but the ticket fields don't change, so every gold answer is identical at every size. Any drop in accuracy comes from context pressure alone. Whiskers show 95% Wilson intervals.</p>
+  <div class="card chart-card">
+    <div class="legend" id="legend-acc"></div>
+    <svg id="chart-acc" role="img" aria-label="Accuracy by payload size for each scaffold"></svg>
+  </div>
+
+  <h2>Why: the largest request each scaffold tried to send</h2>
+  <p>A plain loop keeps every export in context, so its biggest request grows with the size dial. Deep Agents writes any tool result of 80,000 characters or more to a virtual file and hands the model a pointer and a preview. The model then <code>grep</code>s the file. Each point is the largest request any run in that cell tried to send. For rejected requests, it's the size OpenAI quoted back in the 429, which includes an 8k output reservation.</p>
+  <div class="card chart-card">
+    <div class="legend" id="legend-peak"></div>
+    <svg id="chart-peak" role="img" aria-label="Largest request per run by payload size for each scaffold"></svg>
+  </div>
+
+  <h2>What it costs</h2>
+  <p>Metered from every model call in the run, including Deep Agents' subagents and summarisation, at OpenAI's published gpt-5.4-mini rates.</p>
+  <div class="card chart-card">
+    <div class="legend" id="legend-cost"></div>
+    <svg id="chart-cost" role="img" aria-label="Mean cost per run by payload size for each scaffold"></svg>
+  </div>
+
+  <h2>Every cell, as a table</h2>
+  <div class="card table-wrap" id="outcome-table"></div>
+
+  <h3 style="margin-top:24px">Accuracy by how many accounts a task exports</h3>
+  <p>One, two or three exports per run. The ceiling only bites where several large exports pile up in one context.</p>
+  <div class="card table-wrap" id="accounts-table"></div>
+
+  <h2>Every run</h2>
+  <div class="filters">
+    <label>Scaffold <select id="f-arm"></select></label>
+    <label>Size <select id="f-size"></select></label>
+    <label>Task <select id="f-task"></select></label>
+    <label>Outcome <select id="f-outcome"></select></label>
+    <span id="runs-count" style="color:var(--text-muted);font-size:.85rem;align-self:center"></span>
+  </div>
+  <div class="card table-wrap" id="runs-table"></div>
+
+  <h2>The tasks</h2>
+  <details><summary>Eight audit questions over a seeded six-account ticket corpus</summary><ul id="tasks"></ul></details>
+
+  <footer>
+    <p>Every number on this page is built from <code>artifacts/runs.jsonl</code>. <code>uv run python -m support_audit.verify</code> re-derives all of it with no API key.
+    Code, raw runs and write-up: <a href="https://github.com/carlosrymer/langgraph-vs-deepagents-support-audit">github.com/carlosrymer/langgraph-vs-deepagents-support-audit</a>.</p>
+    <p>Part of an ongoing series of small, real-world builds trialing frontier AI models, frameworks, and tools as they ship.</p>
+  </footer>
+</main>
+<div class="tip" id="tip"></div>
+<script src="app.js"></script>
+</body>
+</html>
