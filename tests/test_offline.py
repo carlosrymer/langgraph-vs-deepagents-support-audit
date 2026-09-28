@@ -111,3 +111,51 @@ def test_simulated_ceiling_is_a_subject_failure_not_a_harness_error():
     assert rec["outcome"] == "context_ceiling"
     rec = run_one("deepagents", "XL", "T6", 1, ScriptedModel(gold=gold("T6"), ceiling_tokens=200_000))
     assert rec["outcome"] == "pass"
+
+
+def test_report_and_verifier_run_end_to_end_on_fake_runs(tmp_path, monkeypatch):
+    """The whole pipeline — runner, report, verifier checks — on scripted runs."""
+    from support_audit import report, runner, verify
+
+    out = tmp_path / "runs.jsonl"
+    runner.main(["--fake", "--tasks", "T1", "T4", "--sizes", "S", "L", "--trials", "1",
+                 "--concurrency", "2", "--out", str(out)])
+    runs = report.load_runs(out)
+    assert len(runs) == 2 * 2 * 3 and all(r["outcome"] == "pass" for r in runs)
+    summary = report.build_summary(runs)
+    assert summary["grid"]["deepagents"]["L"]["accuracy"] == 1.0
+    problems: list[str] = []
+    assert sum(verify._check_trajectory(r, problems) for r in runs) > 0 and not problems
+
+
+def test_summarisation_cannot_rescue_one_oversized_step():
+    """Documents a finding, offline. With eviction off, three XL exports land in
+    a single step. Deep Agents' summarisation trigger (170k tokens for a model
+    with no profile) is exceeded, but `keep=("messages", 6)` covers the whole
+    conversation, so nothing is summarised and the oversized request goes out."""
+    from langchain_openai import ChatOpenAI
+    from deepagents.middleware.summarization import compute_summarization_defaults
+
+    defaults = compute_summarization_defaults(ChatOpenAI(model="gpt-5.4-mini-2026-03-17", api_key="unused"))
+    assert defaults["trigger"] == ("tokens", 170000) and defaults["keep"] == ("messages", 6)
+    rec = run_one("deepagents_no_offload", "XL", "T6", 1, ScriptedModel(gold=gold("T6")))
+    assert rec["model_calls"] == 2  # no summarisation call happened
+    assert rec["per_call_input_tokens"][-1] > 170_000
+
+
+def test_openai_request_too_large_is_not_a_context_overflow_error():
+    """Why Deep Agents' ContextOverflowError fallback never engaged: OpenAI's
+    per-request TPM rejection is a 429, which langchain-openai maps to a rate-limit
+    error, not ContextOverflowError."""
+    import httpx
+    import openai
+    from langchain_core.exceptions import ContextOverflowError
+    from langchain_openai.chat_models.base import _handle_openai_api_error
+
+    req = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    err = openai.RateLimitError("Request too large for gpt-5.4-mini: Limit 200000, Requested 238431",
+                                response=httpx.Response(429, request=req), body=None)
+    with pytest.raises(Exception) as got:
+        _handle_openai_api_error(err)
+    assert not isinstance(got.value, ContextOverflowError)
+    assert classify_exception(got.value) == "context_ceiling"

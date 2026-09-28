@@ -136,3 +136,16 @@ limits concurrent runs — handled with 6 client retries and 3 concurrent runs.
 ## Timeline
 
 Single session, 2026-09-28.
+
+## What changed after pre-registration
+
+The scoring rule, the outcome classes and the accuracy and cost definitions are unchanged from the
+commit that pre-registered them. After the main run I added three things, all descriptive:
+
+- **Harness-error re-runs, as the rule requires.** 61 attempts ended in a transient
+  tokens-per-minute 429 caused by concurrent runs competing for the same budget. I re-ran them at
+  concurrency 2, then 1, until none were left. The superseded records stay in `runs.jsonl`.
+- **"Largest attempted request"**, which takes the size OpenAI quotes back in a rejected request's
+  429, so the chart can show how big the rejected requests were.
+- **The read-strategy breakdown** (grep vs `read_file` windows) of how Deep Agents used offloaded
+  files. It's post-hoc, and strategy is confounded with task.

@@ -1,0 +1,44 @@
+# PARKED, UNUSED. Copy to a project repo as deploy/github-pages-workflow.yml — NOT to
+# .github/workflows/ — and pair it with a deploy/README.md saying why it isn't running.
+#
+# This is the GitHub Actions workflow that would normally publish site/ to GitHub Pages.
+# It is parked because the publishing token available in this environment carries no
+# `workflow` scope, so any push touching .github/workflows/** is rejected by GitHub, and
+# the Pages REST API is unreachable so Pages cannot be enabled programmatically either.
+# The site is published instead by scripts/deploy_pages.sh, which pushes site/ to the root
+# of a gh-pages branch. The output is identical.
+#
+# To switch to this workflow: move it to .github/workflows/deploy.yml and set the Pages
+# source to "GitHub Actions" in repository settings.
+name: Deploy site to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
